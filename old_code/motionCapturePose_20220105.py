@@ -90,10 +90,10 @@ def on_change(val):
 #    cv.putText(imageCopy, str(val), (0, imageCopy.shape[0] - 10), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 4)
     cv2.imshow(windowName, imageCopy)
 
-cap = cv2.VideoCapture("rtsp://user:Password155@192.168.50.101:554/Streaming/Channels/103/?transportmode=unicast")
+# cap = cv2.VideoCapture("rtsp://user:Password155@192.168.50.101:554/Streaming/Channels/103/?transportmode=unicast")
 # cap = cv2.VideoCapture(0)
-#cap = cv2.VideoCapture('D:/temp/handtrack/pose/0deg_lighton_andy.mp4')
-# cap = cv2.VideoCapture('0deg_lighton_andy.mp4')
+# cap = cv2.VideoCapture('D:/temp/handtrack/pose/0deg_lighton_andy.mp4')
+cap = cv2.VideoCapture('0deg_lighton_andy.mp4')
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 ret, frame = cap.read()
@@ -211,7 +211,7 @@ if(1):
                     box_xw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)-1)
 
                 print("new_x new_y box_xw box_yh")
-                print("{0:<5} {1:<5} {2:<5} {3:<5}".format(new_x, new_y, box_xw, box_yh))
+                print("{0:<5} {1:<5} {2:<6} {3:<6}".format(new_x, new_y, box_xw, box_yh))
 
                 # Extract the image's height and width according to the box
                 image = frame1[new_y: box_yh, new_x: box_xw]
@@ -262,9 +262,9 @@ if(1):
                         X = pd.DataFrame([row])
                         body_language_class = model.predict(X)[0]
                     else:
-                        if posearray[9] < posearray[5]:
+                        if posearray[13] < posearray[1]:
                             body_language_class = "ThrowL"
-                        if posearray[10] < posearray[6]:
+                        if posearray[16] < posearray[4]:
                             body_language_class = "ThrowR"
                     print("body_language_class: ", body_language_class)
     #               body_language_prob = model.predict_proba(X)[0]
