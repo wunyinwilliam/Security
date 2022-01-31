@@ -1,0 +1,12 @@
+cd Desktop/client
+python3 posenet_20220131_mask.py rtsp://user:Password155@192.168.50.101:554/Streaming/Channels/101/?transportmode=unicast --input-rtsp-latency=0 --network=densenet121-body
+
+
+cd Desktop/client
+python3 posenet_20220131_mask.py /dev/video1  --network=densenet121-body
+
+cd Desktop/client
+python3 posenet_20220131_mask.py csi://0  --network=densenet121-body
+
+http://user:Passord155@192.168.50.101/ISAPI/Streaming/Channels/103/httpPreview
+

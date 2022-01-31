@@ -3,5 +3,4 @@ python3 posenet_20220127.py rtsp://user:Password155@192.168.50.101:554/Streaming
 
 
 cd Desktop/client
-python3 posenet_20220127.py /dev/video1  --network=densenet121-body
-
+python3 posenet_20220127.py /dev/video1 --network=densenet121-body
