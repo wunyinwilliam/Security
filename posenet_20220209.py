@@ -25,12 +25,14 @@ import math
 import cv2 as cv2
 import pandas as pd
 import time
-import pickle 
+import pickle
 import jetson.inference
 import jetson.utils
 import argparse
 import sys
 import math
+import collections
+
 actionBoxoffset = 30
 y_offset = 100 # lower the detect y coz of the text display
 ##### MQTT Variable #######
@@ -66,7 +68,7 @@ def on_message(client, userdata, message):
 #    time.sleep(1)
 #    print("received topic =",str(message.topic))
 #    print("received message =",str(message.payload.decode("utf-8")))
-    print("Message received-> " + message.topic + " " + str(message.payload.decode("utf-8")))  # 
+    print("Message received-> " + message.topic + " " + str(message.payload.decode("utf-8")))  #
     if(message.topic == (slaveIn + "/boxSize")):
         boxSize = int(str(message.payload.decode("utf-8")))
 #        print("boxsize change")
@@ -113,7 +115,7 @@ font = jetson.utils.cudaFont()
 body_language_class = "Initial"
 
 # parse the command line
-parser = argparse.ArgumentParser(description="Run pose estimation DNN on a video/image stream.", 
+parser = argparse.ArgumentParser(description="Run pose estimation DNN on a video/image stream.",
                                  formatter_class=argparse.RawTextHelpFormatter, epilog=jetson.inference.poseNet.Usage() +
                                  jetson.utils.videoSource.Usage() + jetson.utils.videoOutput.Usage() + jetson.utils.logUsage())
 
@@ -123,7 +125,7 @@ parser.add_argument("--network", type=str, default="resnet18-body", help="pre-tr
 #parser.add_argument("--overlay", type=str, default="links,keypoints,box", help="pose overlay flags (e.g. --overlay=links,keypoints,box)\nvalid combinations are:  'links', 'keypoints', 'boxes', 'none'")
 #parser.add_argument("--overlay", type=str, default="links,keypoints", help="pose overlay flags (e.g. --overlay=links,keypoints,box)\nvalid combinations are:  'links', 'keypoints', 'boxes', 'none'")
 parser.add_argument("--overlay", type=str, default="none", help="pose overlay flags (e.g. --overlay=links,keypoints,box)\nvalid combinations are:  'links', 'keypoints', 'boxes', 'none'")
-parser.add_argument("--threshold", type=float, default=0.15, help="minimum detection threshold to use") 
+parser.add_argument("--threshold", type=float, default=0.15, help="minimum detection threshold to use")
 
 try:
 	opt = parser.parse_known_args()[0]
@@ -149,6 +151,12 @@ windowSizeY = int(img.height/4)
 
 #MaxboxSize = 30000
 MaxboxSize = windowSizeX*windowSizeY
+
+# box history configuration
+MAX_BOX_HISTORY = 10
+COORDINATE = "coordinate"
+FRAME_REMAIN = "frame_remain"
+box_history = collections.deque([], MAX_BOX_HISTORY)
 
 # process frames until the user exits
 movement_cnt = 0
@@ -183,7 +191,7 @@ while True:
         movement_cnt = 0
         action_cnt = 0
         PTZx=0
-        PTZy=0        
+        PTZy=0
     else:
         alive_cnt = alive_cnt + 1
     try:
@@ -191,6 +199,15 @@ while True:
         img = input.Capture()
         img_copy = jetson.utils.cudaMemcpy(img)
         frame1 = jetson.utils.cudaToNumpy(img)
+        pop_times = 0
+        for pos in range(len(box_history)):
+            box_history[pos][FRAME_REMAIN] -= 1
+            if box_history[pos][FRAME_REMAIN] <= 0:
+                pop_times += 1
+        for _ in range(pop_times):
+            box_history.popleft()
+        print("**************** box_history ****************")
+        print(list(box_history))
     except:
         print("skip frame")
     #CV stuff
@@ -243,7 +260,7 @@ while True:
 #            print("new_x, new_y, box_xw, box_yh")
 #            print(new_x, new_y, box_xw, box_yh)
             crop_roi = (new_x, new_y, box_xw, box_yh)
-                                        
+
 # crop the image to the ROI
             try:
                 jetson.utils.cudaCrop(img, cuda_mem, crop_roi)
@@ -369,6 +386,12 @@ while True:
 #                jetson.utils.cudaDrawLine(cuda_mem, (w-1,1),(w-1,h-1), boxColor,1)
 #                font.OverlayText(cuda_mem, cuda_mem.width, cuda_mem.height, "{:s}".format(body_language_class), 5, 5, font.White, font.Gray40)
                 action_cnt = action_cnt + 1
+
+                box_history.append({
+                    COORDINATE: (new_x+minX, new_y+minY, new_x+maxX, new_y+maxY),
+                    FRAME_REMAIN: 10
+                })
+
             else: #no action
                 if(len(poses)>0): #no action but see pose
 #                    boxColor=(255,127,0,100) #orange
