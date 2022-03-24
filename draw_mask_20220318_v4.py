@@ -43,6 +43,7 @@ class DrawMask:
             self.is_drawing = True
             self.ix, self.iy = x, y
         elif event == cv2.EVENT_MOUSEMOVE:
+            cv2.setWindowTitle("Draw Masks", f"({x},{y})")
             if self.is_drawing:
                 cv2.rectangle(self.draw_img, (self.ix, self.iy), (x, y), (0, 0, 0), -1)
         elif event == cv2.EVENT_LBUTTONUP:
