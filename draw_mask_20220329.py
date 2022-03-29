@@ -14,6 +14,8 @@ class DrawMask:
 
     def __init__(self, input_URI, argv):
         self.is_drawing = False             # true if mouse is pressed
+        self.draw_mode = 1
+        self.is_eraser = False
         self.ix, self.iy = -1, -1
         self.input = jetson.utils.videoSource(input_URI, argv)
         cv2.namedWindow('Draw Masks')
@@ -49,24 +51,54 @@ class DrawMask:
         cv2.line(image, (int(width/3), 0), (int(width/3), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
         cv2.line(image, (int(width*2/3), 0), (int(width*2/3), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
         cv2.putText(image, 'Clear All', (10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Undo', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Eraser', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+        cv2.putText(image, 'Draw Mode 1', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+        cv2.putText(image, 'Eraser OFF', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
         return image
 
     # mouse callback function
     def draw_circle(self, event, x, y, flags, param):
+        height, width, _ = self.draw_img.shape
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.is_drawing = True
-            # self.ix, self.iy = x, y
+            if y > height:                                          # In the Bottom Bar
+                if x < int(width/3):                                # Clear All
+                    self.draw_img = self.reset_image(self.draw_img.shape)
+                elif x > int(width/3) and x < int(width*2/3):       # Undo
+                    if self.draw_mode == 1:
+                        cv2.rectangle(self.bottom_bar, (int(width/3)+1, 0), (int(width*2/3)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Draw Mode 2', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                        self.draw_mode = 2
+                    elif self.draw_mode == 2:
+                        cv2.rectangle(self.bottom_bar, (int(width/3)+1, 0), (int(width*2/3)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Draw Mode 1', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                        self.draw_mode = 1
+                elif x > int(width*2/3):                            # Eraser
+                    if not self.is_eraser:
+                        cv2.rectangle(self.bottom_bar, (int(width*2/3)+1, 0), (width, BOTTOM_BAR_HEIGHT), (0, 0, 0), -1)
+                        cv2.putText(self.bottom_bar, 'Eraser ON', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 255), 1)
+                    else:
+                        cv2.rectangle(self.bottom_bar, (int(width*2/3)+1, 0), (width, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Eraser OFF', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                    self.is_eraser = not self.is_eraser
+            else:
+                self.is_drawing = True
+                self.ix, self.iy = x, y
         elif event == cv2.EVENT_MOUSEMOVE:
             cv2.setWindowTitle("Draw Masks", f"({x},{y})")
             if self.is_drawing:
-                # cv2.rectangle(self.draw_img, (self.ix, self.iy), (x, y), (0, 0, 0), -1)
-                cv2.rectangle(self.draw_img, (int(x-DRAW_SIZE/2), int(y-DRAW_SIZE/2)), (int(x+DRAW_SIZE/2), int(y+DRAW_SIZE/2)), (0, 0, 0), -1)
+                if not self.is_eraser:
+                    if self.draw_mode == 1:
+                        cv2.rectangle(self.draw_img, (self.ix, self.iy), (x, y), (0, 0, 0), -1)
+                    elif self.draw_mode == 2:
+                        cv2.rectangle(self.draw_img, (int(x-DRAW_SIZE/2), int(y-DRAW_SIZE/2)), (int(x+DRAW_SIZE/2), int(y+DRAW_SIZE/2)), (0, 0, 0), -1)
+                else:
+                    if self.draw_mode == 1:
+                        cv2.rectangle(self.draw_img, (self.ix, self.iy), (x, y), (255, 255, 255), -1)
+                    elif self.draw_mode == 2:
+                        cv2.rectangle(self.draw_img, (int(x-DRAW_SIZE/2), int(y-DRAW_SIZE/2)), (int(x+DRAW_SIZE/2), int(y+DRAW_SIZE/2)), (255, 255, 255), -1)
         elif event == cv2.EVENT_LBUTTONUP:
-            self.is_drawing = False
-            # cv2.rectangle(self.draw_img, (self.ix, self.iy), (x, y), (0, 0, 0), -1)
-            cv2.imwrite('draw_mask.png', self.draw_img)
+            if self.is_drawing:
+                self.is_drawing = False
+                cv2.imwrite('draw_mask.png', self.draw_img)
 
     def start(self):
         while True:
