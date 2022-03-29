@@ -16,6 +16,7 @@ class DrawMask:
         self.is_drawing = False             # True if mouse is pressed on the video
         self.draw_mode = 1                  # Draw mode 1 is for large area, Draw mode 2 is for small area
         self.is_eraser = False              # True if it is in eraser mode, false if normal draw mode
+        self.undo_draw_images = []
         self.input = jetson.utils.videoSource(input_URI, argv)
         cv2.namedWindow('Draw Masks')
         cv2.setMouseCallback('Draw Masks', self.draw)
@@ -63,11 +64,13 @@ class DrawMask:
         image = np.zeros((BOTTOM_BAR_HEIGHT, width, 3), np.uint8)
         image[:] = (255, 255, 255)
         # Draw lines to separate 3 buttons
-        cv2.line(image, (int(width/3), 0), (int(width/3), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
-        cv2.line(image, (int(width*2/3), 0), (int(width*2/3), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
+        cv2.line(image, (int(width/4), 0), (int(width/4), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
+        cv2.line(image, (int(width/2), 0), (int(width/2), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
+        cv2.line(image, (int(width*3/4), 0), (int(width*3/4), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
         cv2.putText(image, 'Clear All', (10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Draw Mode 1', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Eraser OFF', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+        cv2.putText(image, 'Undo', (int(width/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+        cv2.putText(image, 'Large Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+        cv2.putText(image, 'Eraser OFF', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
         return image
 
     # mouse callback function
@@ -77,29 +80,35 @@ class DrawMask:
             # Mouse click in the Bottom Bar
             if y > height:         
                 # Clear All Button                                 
-                if x < int(width/3):
+                if x < int(width/4):
                     self.draw_img = self.reset_image(self.draw_img.shape)
+                    self.undo_draw_images = []
+                # Undo Button
+                elif x > int(width/4) and x < int(width/2):
+                    if len(self.undo_draw_images) != 0:
+                        self.draw_img = self.undo_draw_images.pop().copy()
                 # Draw Mode Button                                 
-                elif x > int(width/3) and x < int(width*2/3):
+                elif x > int(width/2) and x < int(width*3/4):
                     if self.draw_mode == 1:
-                        cv2.rectangle(self.bottom_bar, (int(width/3)+1, 0), (int(width*2/3)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Draw Mode 2', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                        cv2.rectangle(self.bottom_bar, (int(width/2)+1, 0), (int(width*3/4)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Small Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
                         self.draw_mode = 2
                     elif self.draw_mode == 2:
-                        cv2.rectangle(self.bottom_bar, (int(width/3)+1, 0), (int(width*2/3)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Draw Mode 1', (int(width/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                        cv2.rectangle(self.bottom_bar, (int(width/2)+1, 0), (int(width*3/4)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Large Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
                         self.draw_mode = 1
                 # Eraser Button
-                elif x > int(width*2/3):
+                elif x > int(width*3/4):
                     if not self.is_eraser:
-                        cv2.rectangle(self.bottom_bar, (int(width*2/3)+1, 0), (width, BOTTOM_BAR_HEIGHT), (0, 0, 0), -1)
-                        cv2.putText(self.bottom_bar, 'Eraser ON', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 255), 1)
+                        cv2.rectangle(self.bottom_bar, (int(width*3/4)+1, 0), (width, BOTTOM_BAR_HEIGHT), (0, 0, 0), -1)
+                        cv2.putText(self.bottom_bar, 'Eraser ON', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 255), 1)
                     else:
-                        cv2.rectangle(self.bottom_bar, (int(width*2/3)+1, 0), (width, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Eraser OFF', (int(width*2/3)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                        cv2.rectangle(self.bottom_bar, (int(width*3/4)+1, 0), (width, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
+                        cv2.putText(self.bottom_bar, 'Eraser OFF', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
                     self.is_eraser = not self.is_eraser
             # Mouse click in the image
             else:
+                self.undo_draw_images.append(self.draw_img.copy())
                 self.is_drawing = True
                 self.ix, self.iy = x, y
         elif event == cv2.EVENT_MOUSEMOVE:
