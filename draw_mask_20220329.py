@@ -17,7 +17,11 @@ class DrawMask:
         self.draw_mode = 1                  # Draw mode 1 is for large area, Draw mode 2 is for small area
         self.is_eraser = False              # True if it is in eraser mode, false if normal draw mode
         self.undo_draw_images = []
-        self.input = jetson.utils.videoSource(input_URI, argv)
+        try:
+            self.input = jetson.utils.videoSource(input_URI, argv)
+        except:
+            print("Video source not found")
+            return
         cv2.namedWindow('Draw Masks')
         cv2.setMouseCallback('Draw Masks', self.draw)
         img = self.read_cuda_image()                            # Read cuda image once to obtain the shape
@@ -146,4 +150,7 @@ if __name__ == "__main__":
                                 jetson.utils.videoSource.Usage() + jetson.utils.videoOutput.Usage() + jetson.utils.logUsage())
     parser.add_argument("input_URI", type=str, default="", nargs='?', help="URI of the input stream")
     opt = parser.parse_known_args()[0]
-    draw_mask = DrawMask(input_URI=opt.input_URI, argv=sys.argv)
+    if opt.input_URI != "":
+        draw_mask = DrawMask(input_URI=opt.input_URI, argv=sys.argv)
+    else:
+        print("Please add input_URI argument")
