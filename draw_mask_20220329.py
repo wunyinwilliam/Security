@@ -8,6 +8,7 @@ import sys
 EDGE_PIXEL = 20
 DRAW_SIZE = 10              # For Draw Mode 2, each mouse click is 10x10 pixels
 BOTTOM_BAR_HEIGHT = 40
+DISMISS_COUNT = 30
 
 
 class DrawMask:
@@ -16,6 +17,7 @@ class DrawMask:
         self.is_drawing = False             # True if mouse is pressed on the video
         self.draw_mode = 1                  # Draw mode 1 is for large area, Draw mode 2 is for small area
         self.is_eraser = False              # True if it is in eraser mode, false if normal draw mode
+        self.dismiss_count = 0              # Dismiss the text if dismiss_count == 0
         self.undo_draw_images = []
         try:
             self.input = jetson.utils.videoSource(input_URI, argv)
@@ -28,7 +30,6 @@ class DrawMask:
         self.draw_img = cv2.imread('draw_mask.png')             # Read previous draw_mask image
         if self.draw_img is None:
             self.draw_img = self.reset_image(img.shape)
-        self.bottom_bar = self.create_bottom_bar(img.shape)
         self.start()
 
     def read_cuda_image(self):
@@ -79,42 +80,11 @@ class DrawMask:
 
     # mouse callback function
     def draw(self, event, x, y, flags, param):
-        height, width, _ = self.draw_img.shape
         if event == cv2.EVENT_LBUTTONDOWN:
-            # Mouse click in the Bottom Bar
-            if y > height:         
-                # Clear All Button                                 
-                if x < int(width/4):
-                    self.draw_img = self.reset_image(self.draw_img.shape)
-                    self.undo_draw_images = []
-                # Undo Button
-                elif x > int(width/4) and x < int(width/2):
-                    if len(self.undo_draw_images) != 0:
-                        self.draw_img = self.undo_draw_images.pop().copy()
-                # Draw Mode Button                                 
-                elif x > int(width/2) and x < int(width*3/4):
-                    if self.draw_mode == 1:
-                        cv2.rectangle(self.bottom_bar, (int(width/2)+1, 0), (int(width*3/4)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Small Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-                        self.draw_mode = 2
-                    elif self.draw_mode == 2:
-                        cv2.rectangle(self.bottom_bar, (int(width/2)+1, 0), (int(width*3/4)-1, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Large Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-                        self.draw_mode = 1
-                # Eraser Button
-                elif x > int(width*3/4):
-                    if not self.is_eraser:
-                        cv2.rectangle(self.bottom_bar, (int(width*3/4)+1, 0), (width, BOTTOM_BAR_HEIGHT), (0, 0, 0), -1)
-                        cv2.putText(self.bottom_bar, 'Eraser ON', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 255), 1)
-                    else:
-                        cv2.rectangle(self.bottom_bar, (int(width*3/4)+1, 0), (width, BOTTOM_BAR_HEIGHT), (255, 255, 255), -1)
-                        cv2.putText(self.bottom_bar, 'Eraser OFF', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-                    self.is_eraser = not self.is_eraser
             # Mouse click in the image
-            else:
-                self.undo_draw_images.append(self.draw_img.copy())
-                self.is_drawing = True
-                self.ix, self.iy = x, y
+            self.undo_draw_images.append(self.draw_img.copy())
+            self.is_drawing = True
+            self.ix, self.iy = x, y
         elif event == cv2.EVENT_MOUSEMOVE:
             cv2.setWindowTitle("Draw Masks", f"({x},{y})")
             if self.is_drawing:
@@ -137,9 +107,53 @@ class DrawMask:
         while True:
             img = self.read_cuda_image()
             combine_image = cv2.bitwise_and(img, self.draw_img)
-            combine_image_with_bottom_bar = np.concatenate((combine_image, self.bottom_bar), axis=0)
-            cv2.imshow('Draw Masks', combine_image_with_bottom_bar)
-            if cv2.waitKey(1) & 0xFF == 27:
+            if self.dismiss_count > 0:
+                self.draw_img_with_text = combine_image.copy()
+                cv2.rectangle(self.draw_img_with_text, (0, 0), (200, 50), (255, 255, 255), -1)
+                cv2.putText(self.draw_img_with_text, self.text, (10, 40), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                cv2.imshow('Draw Masks', self.draw_img_with_text)
+                self.dismiss_count -= 1
+            else:
+                self.text = None
+                cv2.imshow('Draw Masks', combine_image)
+
+            # Key Press Event
+            key = cv2.waitKey(1)
+            if key != -1:
+                print('You pressed %d (0x%x), LSB: %d (%s)' % (key, key, key % 256,
+                repr(chr(key%256)) if key%256 < 128 else '?'))
+
+            if key == 26:            # Ctrl + Z
+                if len(self.undo_draw_images) != 0:
+                    self.draw_img = self.undo_draw_images.pop().copy()
+                    self.text = 'Undo'
+                    self.dismiss_count = DISMISS_COUNT
+
+            elif key == 1:          # Ctrl + A
+                self.draw_img = self.reset_image(self.draw_img.shape)
+                self.undo_draw_images = []
+                self.text = 'Clear All'
+                self.dismiss_count = DISMISS_COUNT
+
+            elif key == 32:          # Space Bar
+                self.is_eraser = not self.is_eraser
+                if self.is_eraser:
+                    self.text = 'Eraser'
+                else:
+                    self.text = 'Pen'
+                self.dismiss_count = DISMISS_COUNT
+
+            elif key == 43:          # +
+                self.draw_mode = 1
+                self.text = 'Large Area'
+                self.dismiss_count = DISMISS_COUNT
+
+            elif key == 45:          # -
+                self.draw_mode = 2
+                self.text = 'Small Area'
+                self.dismiss_count = DISMISS_COUNT
+
+            elif key == 27:          # Esc
                 cv2.destroyAllWindows()
                 sys.exit(0)
 
