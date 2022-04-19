@@ -7,9 +7,7 @@ import sys
 
 EDGE_PIXEL = 20
 DRAW_SIZE = 10              # For Draw Mode 2, each mouse click is 10x10 pixels
-BOTTOM_BAR_HEIGHT = 40
-DISMISS_COUNT = 30
-
+DISMISS_COUNT = 30          # Dismiss the text after this number of frames
 
 class DrawMask:
 
@@ -17,13 +15,8 @@ class DrawMask:
         self.is_drawing = False             # True if mouse is pressed on the video
         self.draw_mode = 1                  # Draw mode 1 is for large area, Draw mode 2 is for small area
         self.is_eraser = False              # True if it is in eraser mode, false if normal draw mode
-        self.dismiss_count = 0              # Dismiss the text if dismiss_count == 0
         self.undo_draw_images = []
-        try:
-            self.input = jetson.utils.videoSource(input_URI, argv)
-        except:
-            print("Video source not found")
-            return
+        self.input = jetson.utils.videoSource(input_URI, argv)
         cv2.namedWindow('Draw Masks')
         cv2.setMouseCallback('Draw Masks', self.draw)
         img = self.read_cuda_image()                            # Read cuda image once to obtain the shape
@@ -64,18 +57,20 @@ class DrawMask:
             mask = np.full((box[3]-box[1], box[2]-box[0], 3), 0).astype(np.uint8)
             frame[box[1]:box[3], box[0]:box[2]] = mask
 
-    def create_bottom_bar(self, shape):
-        _, width, _ = shape
-        image = np.zeros((BOTTOM_BAR_HEIGHT, width, 3), np.uint8)
-        image[:] = (255, 255, 255)
-        # Draw lines to separate 3 buttons
-        cv2.line(image, (int(width/4), 0), (int(width/4), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
-        cv2.line(image, (int(width/2), 0), (int(width/2), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
-        cv2.line(image, (int(width*3/4), 0), (int(width*3/4), BOTTOM_BAR_HEIGHT), (0, 0, 0), 1)
-        cv2.putText(image, 'Clear All', (10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Undo', (int(width/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Large Area', (int(width/2)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-        cv2.putText(image, 'Eraser OFF', (int(width*3/4)+10, BOTTOM_BAR_HEIGHT-10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+    def create_description_text(self, image):
+        _, width, _ = image.shape
+        # crop the sub-rect for text from the image
+        x, y, w, h = width-220, EDGE_PIXEL, 220-EDGE_PIXEL, 110
+        sub_img = image[y:y+h, x:x+w]
+        white_rect = np.ones(sub_img.shape, dtype=np.uint8) * 255
+        res = cv2.addWeighted(sub_img, 0.5, white_rect, 0.5, 1.0)
+        cv2.putText(res, 'Clear All: Ctrl + a', (0, 20), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Undo: Ctrl + z', (0, 40), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Large/Small Area: +/-', (0, 60), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Eraser ON/OFF: SPACE', (0, 80), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Exit: Esc', (0, 100), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        # Putting the sub-rect back to its position
+        image[y:y+h, x:x+w] = res
         return image
 
     # mouse callback function
@@ -107,6 +102,7 @@ class DrawMask:
         while True:
             img = self.read_cuda_image()
             combine_image = cv2.bitwise_and(img, self.draw_img)
+            combine_image = self.create_description_text(combine_image)
             if self.dismiss_count > 0:
                 self.draw_img_with_text = combine_image.copy()
                 cv2.rectangle(self.draw_img_with_text, (0, 0), (200, 50), (255, 255, 255), -1)
@@ -117,7 +113,6 @@ class DrawMask:
                 self.text = None
                 cv2.imshow('Draw Masks', combine_image)
 
-            # Key Press Event
             key = cv2.waitKey(1)
             if key != -1:
                 print('You pressed %d (0x%x), LSB: %d (%s)' % (key, key, key % 256,
@@ -164,7 +159,4 @@ if __name__ == "__main__":
                                 jetson.utils.videoSource.Usage() + jetson.utils.videoOutput.Usage() + jetson.utils.logUsage())
     parser.add_argument("input_URI", type=str, default="", nargs='?', help="URI of the input stream")
     opt = parser.parse_known_args()[0]
-    if opt.input_URI != "":
-        draw_mask = DrawMask(input_URI=opt.input_URI, argv=sys.argv)
-    else:
-        print("Please add input_URI argument")
+    draw_mask = DrawMask(input_URI=opt.input_URI, argv=sys.argv)

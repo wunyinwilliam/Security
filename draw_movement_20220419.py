@@ -1,28 +1,47 @@
 import numpy as np
 import cv2
+import jetson.inference
+import jetson.utils
+import argparse
 import sys
 
 EDGE_PIXEL = 20
 DRAW_SIZE = 10              # For Draw Mode 2, each mouse click is 10x10 pixels
 DISMISS_COUNT = 30          # Dismiss the text after this number of frames
 
-
 class DrawMask:
 
-    def __init__(self):
+    def __init__(self, input_URI, argv):
         self.is_drawing = False             # True if mouse is pressed on the video
         self.draw_mode = 1                  # Draw mode 1 is for large area, Draw mode 2 is for small area
         self.is_eraser = False              # True if it is in eraser mode, false if normal draw mode
-        self.dismiss_count = 0              # Dismiss the text if dismiss_count == 0
         self.undo_draw_images = []
+        self.input = jetson.utils.videoSource(input_URI, argv)
         cv2.namedWindow('Draw Masks')
         cv2.setMouseCallback('Draw Masks', self.draw)
-        self.cap = cv2.VideoCapture(0)
-        _, img = self.cap.read()
-        self.draw_img = cv2.imread('draw_mask.png')             # Read previous draw_mask image
+        img = self.read_cuda_image()                            # Read cuda image once to obtain the shape
+        self.draw_img = cv2.imread('m1_mask.png')             # Read previous draw_mask image
         if self.draw_img is None:
             self.draw_img = self.reset_image(img.shape)
         self.start()
+
+    def read_cuda_image(self):
+        # load the image from CUDA memory
+        try:
+            rgb_img = self.input.Capture()
+        # convert to BGR, since that's what OpenCV expects
+            bgr_img = jetson.utils.cudaAllocMapped(width=rgb_img.width,
+                    height=rgb_img.height,
+                    format='bgr8')
+            jetson.utils.cudaConvertColor(rgb_img, bgr_img)
+        # Make sure the GPU is done work before we convert to cv2
+            jetson.utils.cudaDeviceSynchronize()
+        # convert to cv2 image (cv2 images are numpy arrays)
+            img = jetson.utils.cudaToNumpy(bgr_img)
+        except:
+            print("skip frame")
+            img=cv2.imread('m1_mask.png')  
+        return img
 
     def reset_image(self, shape):
         height, width, _ = shape
@@ -34,7 +53,7 @@ class DrawMask:
         image = np.zeros((height, width, 3), np.uint8)        
         image[:] = (255, 255, 255)
         self.draw_edges(image, edges)
-        cv2.imwrite('draw_mask.png', image)
+        cv2.imwrite('m1_mask.png', image)
         return image
 
     def draw_edges(self, frame, boxes):
@@ -81,11 +100,11 @@ class DrawMask:
         elif event == cv2.EVENT_LBUTTONUP:
             if self.is_drawing:
                 self.is_drawing = False
-                cv2.imwrite('draw_mask.png', self.draw_img)
+                cv2.imwrite('m1_mask.png', self.draw_img)
 
     def start(self):
         while True:
-            _, img = self.cap.read()
+            img = self.read_cuda_image()
             combine_image = cv2.bitwise_and(img, self.draw_img)
             combine_image = self.create_description_text(combine_image)
             if self.dismiss_count > 0:
@@ -139,4 +158,9 @@ class DrawMask:
 
 
 if __name__ == "__main__":
-    draw_mask = DrawMask()
+    parser = argparse.ArgumentParser(description="Run pose estimation DNN on a video/image stream.",
+                                formatter_class=argparse.RawTextHelpFormatter, epilog=jetson.inference.poseNet.Usage() +
+                                jetson.utils.videoSource.Usage() + jetson.utils.videoOutput.Usage() + jetson.utils.logUsage())
+    parser.add_argument("input_URI", type=str, default="", nargs='?', help="URI of the input stream")
+    opt = parser.parse_known_args()[0]
+    draw_mask = DrawMask(input_URI=opt.input_URI, argv=sys.argv)
