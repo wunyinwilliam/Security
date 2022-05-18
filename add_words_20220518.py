@@ -1,5 +1,8 @@
 import numpy as np
 import cv2
+import jetson.inference
+import jetson.utils
+import argparse
 import sys
 import tkinter as tk
 from tkinter.simpledialog import askstring
@@ -12,33 +15,36 @@ class AddWords:
     def __init__(self):
         self.dismiss_count = 0              # Dismiss the text if dismiss_count == 0
         self.undo_word_images = []
+        self.input = jetson.utils.videoSource('/dev/video0')
         cv2.namedWindow('Add Words')
         cv2.setMouseCallback('Add Words', self.draw)
-        self.cap = cv2.VideoCapture(0)
-
-        # Delete later
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        
-        _, img = self.cap.read()
+        img = self.read_cuda_image()                            # Read cuda image once to obtain the shape
         self.word_img = cv2.imread('word_overlay.png')             # Read previous word_overlay image
         if self.word_img is None:
             self.word_img = self.reset_image(img.shape)
         self.start()
 
+    def read_cuda_image(self):
+        # load the image from CUDA memory
+        rgb_img = self.input.Capture()
+        # convert to BGR, since that's what OpenCV expects
+        bgr_img = jetson.utils.cudaAllocMapped(width=rgb_img.width,
+                    height=rgb_img.height,
+                    format='bgr8')
+        jetson.utils.cudaConvertColor(rgb_img, bgr_img)
+        # Make sure the GPU is done work before we convert to cv2
+        jetson.utils.cudaDeviceSynchronize()
+        # convert to cv2 image (cv2 images are numpy arrays)
+        img = jetson.utils.cudaToNumpy(bgr_img)
+        return img
 
     # Create a black image with same dimension
     def reset_image(self, shape):
         height, width, _ = shape
-        image = np.zeros((height, width, 3), np.uint8)
-
-        # Delete later
-        image = np.zeros((height, width, 3), np.uint8)
-
+        image = np.zeros((height, width, 3), np.uint8)        
         image[:] = (0, 0, 0)
         cv2.imwrite('word_overlay.png', image)
         return image
-
 
     def create_description_text(self, image):
         _, width, _ = image.shape
@@ -47,13 +53,12 @@ class AddWords:
         sub_img = image[y:y+h, x:x+w]
         white_rect = np.ones(sub_img.shape, dtype=np.uint8) * 255
         res = cv2.addWeighted(sub_img, 0.5, white_rect, 0.5, 1.0)
-        cv2.putText(res, 'Clear All: Ctrl + a', (0, 20), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
-        cv2.putText(res, 'Undo: Ctrl + z', (0, 40), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Clear All: a', (0, 20), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+        cv2.putText(res, 'Undo: z', (0, 40), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
         cv2.putText(res, 'Exit: Esc', (0, 60), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
         # Putting the sub-rect back to its position
         image[y:y+h, x:x+w] = res
         return image
-
 
     # mouse callback function
     def draw(self, event, x, y, flags, param):
@@ -68,24 +73,17 @@ class AddWords:
                 cv2.putText(self.word_img, texting, (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0), 2)
                 cv2.imwrite('word_overlay.png', self.word_img)
 
-
     def start(self):
         while True:
-            _, img = self.cap.read()
+            img = self.read_cuda_image()
             word_img_inv = np.bitwise_not(self.word_img)
             image_without_description = cv2.bitwise_and(img, word_img_inv)
-
-            # Delete later
-            crop_word_img_inv = word_img_inv[0:720, 0:1280]
-            image_without_description = cv2.bitwise_and(img, crop_word_img_inv)
-
             combine_image = self.create_description_text(image_without_description)
-
             if self.dismiss_count > 0:
-                self.draw_img_with_text = combine_image.copy()
-                cv2.rectangle(self.draw_img_with_text, (0, 0), (200, 50), (255, 255, 255), -1)
-                cv2.putText(self.draw_img_with_text, self.text, (10, 40), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-                cv2.imshow('Add Words', self.draw_img_with_text)
+                self.word_img_with_text = combine_image.copy()
+                cv2.rectangle(self.word_img_with_text, (0, 0), (200, 50), (255, 255, 255), -1)
+                cv2.putText(self.word_img_with_text, self.text, (10, 40), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                cv2.imshow('Add Words', self.word_img_with_text)
                 self.dismiss_count -= 1
             else:
                 self.text = None
@@ -96,13 +94,13 @@ class AddWords:
                 print('You pressed %d (0x%x), LSB: %d (%s)' % (key, key, key % 256,
                 repr(chr(key%256)) if key%256 < 128 else '?'))
 
-            if key == 26:            # Ctrl + Z
+            if key == 122:            # Z
                 if len(self.undo_word_images) != 0:
                     self.word_img = self.undo_word_images.pop().copy()
                     self.text = 'Undo'
                     self.dismiss_count = DISMISS_COUNT
 
-            elif key == 1:          # Ctrl + A
+            elif key == 97:          # A
                 self.word_img = self.reset_image(self.word_img.shape)
                 self.undo_word_images = []
                 self.text = 'Clear All'
