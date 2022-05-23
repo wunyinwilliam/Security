@@ -12,7 +12,8 @@ class AddWords:
     def __init__(self):
         self.dismiss_count = 0              # Dismiss the text if dismiss_count == 0
         self.undo_word_images = []
-        cv2.namedWindow('Add Words')
+        cv2.namedWindow('Add Words', cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty('Add Words', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         cv2.setMouseCallback('Add Words', self.draw)
         self.cap = cv2.VideoCapture(0)
 
@@ -72,19 +73,18 @@ class AddWords:
     def start(self):
         while True:
             _, img = self.cap.read()
-            word_img_inv = np.bitwise_not(self.word_img)
-            image_without_description = cv2.bitwise_and(img, word_img_inv)
+            image_without_description = cv2.bitwise_or(img, self.word_img)
 
             # Delete later
-            crop_word_img_inv = word_img_inv[0:720, 0:1280]
-            image_without_description = cv2.bitwise_and(img, crop_word_img_inv)
+            crop_word_img = self.word_img[0:720, 0:1280]
+            image_without_description = cv2.bitwise_or(img, crop_word_img)
 
             combine_image = self.create_description_text(image_without_description)
 
             if self.dismiss_count > 0:
                 self.draw_img_with_text = combine_image.copy()
                 cv2.rectangle(self.draw_img_with_text, (0, 0), (200, 50), (255, 255, 255), -1)
-                cv2.putText(self.draw_img_with_text, self.text, (10, 40), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+                cv2.putText(self.draw_img_with_text, self.text, (10, 40), cv2.FONT_HERSHEY_DUPLEX, 1, (120, 120, 120), 1)
                 cv2.imshow('Add Words', self.draw_img_with_text)
                 self.dismiss_count -= 1
             else:
